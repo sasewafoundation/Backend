@@ -14,11 +14,14 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '')
 const corsOptions = {
     origin: allowedOrigins.length > 0 ? allowedOrigins : true,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 // Middlewares
 app.use(express.json());
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('dev'));
 
