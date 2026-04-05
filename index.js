@@ -19,4 +19,7 @@ const startServer = async () => {
     });
 };
 
-startServer();
+startServer().catch((err) => {
+    console.error('Fatal startup error:', err.message);
+    process.exit(1);
+});
