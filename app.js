@@ -21,7 +21,7 @@ const corsOptions = {
 // Middlewares
 app.use(express.json());
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('dev'));
 
