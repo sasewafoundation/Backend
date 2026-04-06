@@ -6,16 +6,40 @@ const path = require('path');
 
 const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGIN || '')
+const normalizeOrigin = (origin = '') => origin.trim().replace(/\/+$/, '').toLowerCase();
+
+const envOrigins = (process.env.CORS_ORIGIN || '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+const fallbackOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'https://sasewa.org.np',
+    'http://sasewa.org.np',
+    'https://www.sasewa.org.np',
+    'http://www.sasewa.org.np',
+];
+
+const allowedOrigins = envOrigins.length > 0 ? envOrigins : fallbackOrigins;
+const allowedOriginSet = new Set(allowedOrigins.map(normalizeOrigin));
+
 const corsOptions = {
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    origin: (origin, callback) => {
+        // Allow non-browser clients such as server-to-server calls or Postman.
+        if (!origin) return callback(null, true);
+
+        if (allowedOriginSet.has(normalizeOrigin(origin))) {
+            return callback(null, true);
+        }
+
+        return callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 200,
 };
 
 // Middlewares
