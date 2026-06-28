@@ -22,7 +22,7 @@ const fallbackOrigins = [
     'http://www.sasewa.org.np',
 ];
 
-const allowedOrigins = envOrigins.length > 0 ? envOrigins : fallbackOrigins;
+const allowedOrigins = [...new Set([...fallbackOrigins, ...envOrigins])];
 const allowedOriginSet = new Set(allowedOrigins.map(normalizeOrigin));
 
 const corsOptions = {
