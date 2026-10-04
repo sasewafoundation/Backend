@@ -2,10 +2,11 @@ const mongoose = require('mongoose');
 
 const blogPostSchema = new mongoose.Schema({
     title: { type: String, required: true },
-    slug: { type: String, unique: true, sparse: true }, // Sparse allows existing nulls to pass
+    slug: { type: String, unique: true, sparse: true },
     content: { type: String, required: true },
     author: { type: String, required: true },
-    published: { type: Boolean, default: true },
+    // FIX 15: Default to false (draft) requiring explicit publication
+    published: { type: Boolean, default: false },
     image: { type: String }, // Primary Header Image
     imagePublicId: { type: String },
     images: [{ type: String }], // Additional Field Photos
