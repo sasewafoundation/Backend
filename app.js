@@ -93,8 +93,13 @@ app.get('/', (req, res) => {
     res.send('Sa-Sewa NGO API is running.');
 });
 
-// FIX 12: 404 handler for undefined API routes
-app.use('/api/*', (req, res) => {
+// FIX 12: 404 handler for undefined API routes (Express 5 compatible)
+app.use('/api', (req, res) => {
+    res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
+});
+
+// Fallback 404 for any other undefined routes
+app.use((req, res) => {
     res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
