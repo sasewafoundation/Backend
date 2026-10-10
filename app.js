@@ -80,6 +80,37 @@ app.use(generalLimiter);
 // Static folder
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Graceful fallback for missing local uploads (e.g. wiped ephemeral storage)
+app.use('/uploads', (req, res) => {
+    res.status(404).send(`
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>CV File Unavailable</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #faf8f5; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 24px; box-sizing: border-box; }
+            .card { background: white; max-width: 480px; width: 100%; border-radius: 16px; border: 1px solid #e8e5e0; padding: 36px 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.06); }
+            h2 { color: #c44a10; font-size: 22px; margin: 0 0 12px; font-weight: 700; }
+            p { color: #555; font-size: 14px; line-height: 1.6; margin: 0 0 16px; }
+            .file-tag { display: inline-block; background: #f3f0ea; padding: 5px 12px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #444; margin-bottom: 18px; word-break: break-all; }
+            .close-btn { display: inline-block; background: #c44a10; color: white; padding: 10px 22px; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 600; cursor: pointer; border: none; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h2>Document File Unavailable</h2>
+            <div class="file-tag">${path.basename(req.path)}</div>
+            <p>This resume was uploaded during an earlier session that stored files only on temporary local disk, which is no longer on the server.</p>
+            <p style="font-size: 13px; color: #777;">All new volunteer submissions are backed up permanently to Cloudinary cloud storage.</p>
+            <button class="close-btn" onclick="window.close()">Close Tab</button>
+          </div>
+        </body>
+      </html>
+    `);
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/projects', require('./routes/projects'));

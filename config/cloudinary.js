@@ -31,6 +31,36 @@ function uploadImageBuffer(file, folder) {
     });
 }
 
+async function uploadCv(file, folder = 'sa-sewa/resumes') {
+    ensureCloudinaryConfig();
+
+    if (file.buffer) {
+        return new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+                {
+                    folder,
+                    resource_type: 'auto',
+                },
+                (err, result) => {
+                    if (err) return reject(err);
+                    return resolve(result);
+                }
+            );
+
+            stream.end(file.buffer);
+        });
+    }
+
+    if (file.path) {
+        return await cloudinary.uploader.upload(file.path, {
+            folder,
+            resource_type: 'auto',
+        });
+    }
+
+    throw new Error('No file buffer or file path found on uploaded file.');
+}
+
 async function destroyImage(publicId) {
     if (!publicId) return;
     ensureCloudinaryConfig();
@@ -39,5 +69,6 @@ async function destroyImage(publicId) {
 
 module.exports = {
     uploadImageBuffer,
+    uploadCv,
     destroyImage,
 };

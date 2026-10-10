@@ -1,6 +1,7 @@
 const Volunteer = require('../models/Volunteer');
 const path = require('path');
 const fs = require('fs/promises');
+const { uploadCv } = require('../config/cloudinary');
 
 // @desc    Get all volunteers
 // @route   GET /api/volunteers
@@ -11,6 +12,44 @@ exports.getVolunteers = async (req, res) => {
         res.status(200).json({ success: true, count: volunteers.length, data: volunteers });
     } catch (err) {
         res.status(400).json({ success: false, message: err.message });
+    }
+};
+
+// @desc    Get or download volunteer CV
+// @route   GET /api/volunteers/:id/cv
+// @access  Private
+exports.getVolunteerCv = async (req, res) => {
+    try {
+        const volunteer = await Volunteer.findById(req.params.id);
+        if (!volunteer) {
+            return res.status(404).json({ success: false, message: 'Volunteer application not found' });
+        }
+
+        const cvPath = volunteer.cvFile || volunteer.cv || volunteer.resume;
+        if (!cvPath) {
+            return res.status(404).json({ success: false, message: 'No CV was attached to this application' });
+        }
+
+        // If stored as Cloudinary or remote URL
+        if (/^https?:\/\//i.test(cvPath)) {
+            return res.redirect(cvPath);
+        }
+
+        // If stored as local file
+        const normalizedRelPath = cvPath.startsWith('/') ? cvPath.slice(1) : cvPath;
+        const absoluteCvPath = path.join(__dirname, '..', normalizedRelPath);
+
+        try {
+            await fs.access(absoluteCvPath);
+            return res.download(absoluteCvPath, volunteer.cvOriginalName || 'Resume.pdf');
+        } catch {
+            return res.status(404).json({
+                success: false,
+                message: 'CV file is not accessible on server disk. Future submissions are stored permanently on cloud storage.',
+            });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 };
 
@@ -43,8 +82,19 @@ exports.applyToVolunteer = async (req, res) => {
         };
 
         if (req.file) {
-            volunteerPayload.cvFile = `/uploads/${req.file.filename}`;
             volunteerPayload.cvOriginalName = req.file.originalname;
+
+            try {
+                const uploadedCv = await uploadCv(req.file);
+                if (uploadedCv && uploadedCv.secure_url) {
+                    volunteerPayload.cvFile = uploadedCv.secure_url;
+                } else {
+                    volunteerPayload.cvFile = `/uploads/${req.file.filename}`;
+                }
+            } catch (cloudErr) {
+                console.warn('Cloudinary CV upload failed, falling back to local uploads:', cloudErr.message);
+                volunteerPayload.cvFile = `/uploads/${req.file.filename}`;
+            }
         }
 
         const volunteer = await Volunteer.create(volunteerPayload);
