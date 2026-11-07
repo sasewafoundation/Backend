@@ -35,12 +35,19 @@ exports.getProjects = async (req, res) => {
     }
 };
 
-// @desc    Get single project by ID
+// @desc    Get single project by ID or slug
 // @route   GET /api/projects/:id
 // @access  Public
 exports.getProject = async (req, res) => {
     try {
-        const project = await Project.findById(req.params.id);
+        const { id } = req.params;
+        let project = null;
+        if (mongoose.Types.ObjectId.isValid(id)) {
+            project = await Project.findById(id);
+        }
+        if (!project) {
+            project = await Project.findOne({ slug: id });
+        }
         if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
         res.status(200).json({ success: true, data: project });
     } catch (err) {
