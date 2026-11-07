@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const Location = require('../models/Location');
 const { uploadImageBuffer, destroyImage } = require('../config/cloudinary');
