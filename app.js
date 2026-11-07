@@ -22,6 +22,7 @@ const fallbackOrigins = [
     'http://sasewa.org.np',
     'https://www.sasewa.org.np',
     'http://www.sasewa.org.np',
+    'https://maps.sasewa.org.np',
 ];
 
 const allowedOrigins = [...new Set([...fallbackOrigins, ...envOrigins])];
@@ -119,6 +120,8 @@ app.use('/api/volunteers', require('./routes/volunteers'));
 app.use('/api/donations', require('./routes/donations'));
 app.use('/api/sponsors', require('./routes/sponsors'));
 app.use('/api/messages', require('./routes/messages'));
+app.use('/api/schools', require('./routes/schools'));
+app.use('/api/locations', require('./routes/locations'));
 
 app.get('/', (req, res) => {
     res.send('Sa-Sewa NGO API is running.');

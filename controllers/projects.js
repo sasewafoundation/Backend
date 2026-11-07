@@ -1,4 +1,5 @@
 const Project = require('../models/Project');
+const Location = require('../models/Location');
 const { uploadImageBuffer, destroyImage } = require('../config/cloudinary');
 
 // Helper to generate consistent project slugs
@@ -9,6 +10,17 @@ const generateSlug = (title) => {
         .replace(/ +/g, '-')
         .trim();
     return `${baseSlug}-${Date.now().toString().slice(-6)}`;
+};
+
+// Helper to safely parse JSON
+const parseJsonField = (field, fallback = null) => {
+    if (!field) return fallback;
+    if (typeof field === 'object') return field;
+    try {
+        return JSON.parse(field);
+    } catch {
+        return fallback;
+    }
 };
 
 // @desc    Get all projects
@@ -49,12 +61,66 @@ exports.getProjectBySlug = async (req, res) => {
     }
 };
 
+// @desc    Get project map data and its locations
+// @route   GET /api/projects/:slug/map
+// @access  Public
+exports.getProjectMap = async (req, res) => {
+    try {
+        const { slug } = req.params;
+        const project = await Project.findOne({ slug });
+
+        if (!project) {
+            return res.status(404).json({ success: false, message: 'Project not found' });
+        }
+
+        // Return 404 if mapEnabled is false
+        if (!project.mapSettings || !project.mapSettings.mapEnabled) {
+            return res.status(404).json({ success: false, message: 'Map is not enabled for this project' });
+        }
+
+        const locations = await Location.find({ project: project._id }).sort({ name: 1 });
+
+        res.status(200).json({
+            success: true,
+            project: {
+                id: project._id,
+                name: project.title,
+                title: project.title,
+                slug: project.slug,
+                about: project.summary || (project.description ? project.description.slice(0, 160) : ''),
+                summary: project.summary || '',
+                description: project.description,
+                startDate: project.startDate,
+                projectType: project.projectType,
+                status: project.status,
+                mapSettings: project.mapSettings,
+                regionName: project.mapSettings?.regionName || '',
+                regionGeoJSON: project.mapSettings?.regionGeoJSON || null,
+            },
+            locations,
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, message: err.message });
+    }
+};
+
 // @desc    Create project
 // @route   POST /api/projects
 // @access  Private
 exports.createProject = async (req, res) => {
     try {
-        const { title, description, projectType, status, location, youtubeLink } = req.body;
+        const {
+            title,
+            description,
+            summary,
+            projectType,
+            status,
+            location,
+            youtubeLink,
+            startDate,
+            slug,
+        } = req.body;
+
         if (!title || !description) {
             return res.status(400).json({ success: false, message: 'Project title and description are required' });
         }
@@ -67,21 +133,36 @@ exports.createProject = async (req, res) => {
             imagePublicIds = uploaded.map((item) => item.public_id);
         }
 
+        // Parse map settings if passed
+        let mapSettings = parseJsonField(req.body.mapSettings, { mapEnabled: false, regionName: '', regionGeoJSON: null });
+        if (req.body.mapEnabled !== undefined) {
+            mapSettings = mapSettings || {};
+            mapSettings.mapEnabled = String(req.body.mapEnabled) === 'true' || Boolean(req.body.mapEnabled);
+        }
+        if (req.body.regionName !== undefined) {
+            mapSettings = mapSettings || {};
+            mapSettings.regionName = String(req.body.regionName).trim();
+        }
+
         const project = await Project.create({
-            title,
+            title: title.trim(),
             description,
+            summary: summary ? summary.trim() : '',
             projectType: projectType || '',
             status: status || 'Active',
             location: location || '',
             youtubeLink: youtubeLink || '',
+            startDate: startDate ? new Date(startDate) : null,
+            slug: slug ? slug.trim().toLowerCase().replace(/[^\w-]+/g, '') : undefined,
             images: parsedImages,
-            imagePublicIds
+            imagePublicIds,
+            mapSettings,
         });
 
         res.status(201).json({ success: true, data: project });
     } catch (err) {
         if (err.code === 11000) {
-            return res.status(409).json({ success: false, message: 'A project with a similar title already exists.' });
+            return res.status(409).json({ success: false, message: 'A project with a similar title or slug already exists.' });
         }
         return res.status(500).json({ success: false, message: err.message || 'Failed to create project' });
     }
@@ -96,19 +177,47 @@ exports.updateProject = async (req, res) => {
         const project = await Project.findById(req.params.id);
         if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
 
-        const { title, description, projectType, status, location, youtubeLink } = req.body;
+        const {
+            title,
+            description,
+            summary,
+            projectType,
+            status,
+            location,
+            youtubeLink,
+            startDate,
+            slug,
+        } = req.body;
 
-        // FIX 14: Regenerate slug if title changed
-        if (title && title !== project.title) {
-            project.title = title;
+        // Custom slug or regenerate if title changed
+        if (slug && slug.trim() && slug.trim() !== project.slug) {
+            project.slug = slug.trim().toLowerCase().replace(/[^\w-]+/g, '');
+        } else if (title && title !== project.title && !project.slug) {
             project.slug = generateSlug(title);
         }
 
+        if (title !== undefined) project.title = title.trim();
         if (description !== undefined) project.description = description;
+        if (summary !== undefined) project.summary = summary.trim();
         if (projectType !== undefined) project.projectType = projectType;
         if (status !== undefined) project.status = status;
         if (location !== undefined) project.location = location;
         if (youtubeLink !== undefined) project.youtubeLink = youtubeLink;
+        if (startDate !== undefined) project.startDate = startDate ? new Date(startDate) : null;
+
+        // Map settings
+        if (req.body.mapSettings !== undefined) {
+            const parsedMapSettings = parseJsonField(req.body.mapSettings, project.mapSettings || {});
+            project.mapSettings = { ...project.mapSettings, ...parsedMapSettings };
+        }
+        if (req.body.mapEnabled !== undefined) {
+            project.mapSettings = project.mapSettings || {};
+            project.mapSettings.mapEnabled = String(req.body.mapEnabled) === 'true' || Boolean(req.body.mapEnabled);
+        }
+        if (req.body.regionName !== undefined) {
+            project.mapSettings = project.mapSettings || {};
+            project.mapSettings.regionName = String(req.body.regionName).trim();
+        }
 
         // FIX 9: Process removedImages array from frontend
         let removedImages = [];

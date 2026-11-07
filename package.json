@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "seed:schools": "node scripts/seedSchools.js",
+    "update:schools": "node scripts/updateSchoolLocations.js",
+    "migrate:locations": "node scripts/migrateSchoolsToLocations.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
