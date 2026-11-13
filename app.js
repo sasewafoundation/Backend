@@ -23,6 +23,7 @@ const fallbackOrigins = [
     'https://www.sasewa.org.np',
     'http://www.sasewa.org.np',
     'https://maps.sasewa.org.np',
+    'https://sa-sewa.vercel.app',
 ];
 
 const allowedOrigins = [...new Set([...fallbackOrigins, ...envOrigins])];
@@ -33,7 +34,13 @@ const corsOptions = {
         // Allow non-browser clients such as server-to-server calls or Postman.
         if (!origin) return callback(null, true);
 
-        if (allowedOriginSet.has(normalizeOrigin(origin))) {
+        const normalized = normalizeOrigin(origin);
+        if (
+            allowedOriginSet.has(normalized) ||
+            normalized.endsWith('.vercel.app') ||
+            normalized.endsWith('sasewa.org.np') ||
+            normalized.includes('localhost')
+        ) {
             return callback(null, true);
         }
 
@@ -41,7 +48,13 @@ const corsOptions = {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'Cache-Control',
+        'Pragma',
+        'X-Requested-With',
+    ],
     optionsSuccessStatus: 200,
 };
 
