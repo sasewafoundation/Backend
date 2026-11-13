@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Project = require('../models/Project');
 const Location = require('../models/Location');
+const School = require('../models/School');
 const { uploadImageBuffer, destroyImage } = require('../config/cloudinary');
 
 // Helper to generate consistent project slugs
@@ -47,7 +48,9 @@ exports.getProject = async (req, res) => {
             project = await Project.findById(id);
         }
         if (!project) {
-            project = await Project.findOne({ slug: id });
+            project = await Project.findOne({
+                $or: [{ slug: id }, { legacySlugs: id }]
+            });
         }
         if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
         res.status(200).json({ success: true, data: project });
@@ -61,7 +64,10 @@ exports.getProject = async (req, res) => {
 // @access  Public
 exports.getProjectBySlug = async (req, res) => {
     try {
-        const project = await Project.findOne({ slug: req.params.slug });
+        const { slug } = req.params;
+        const project = await Project.findOne({
+            $or: [{ slug }, { legacySlugs: slug }]
+        });
         if (!project) return res.status(404).json({ success: false, message: 'Project narrative not found via slug.' });
         res.status(200).json({ success: true, data: project });
     } catch (err) {
@@ -75,23 +81,67 @@ exports.getProjectBySlug = async (req, res) => {
 exports.getProjectMap = async (req, res) => {
     try {
         const { slug } = req.params;
-        const project = await Project.findOne({ slug });
+        const isObjectId = mongoose.Types.ObjectId.isValid(slug);
+
+        const project = await Project.findOne({
+            $or: [
+                { slug },
+                { legacySlugs: slug },
+                ...(isObjectId ? [{ _id: slug }] : []),
+            ]
+        });
 
         if (!project) {
             return res.status(404).json({ success: false, message: 'Project not found' });
         }
 
-        // Return 404 if mapEnabled is false
-        if (!project.mapSettings || !project.mapSettings.mapEnabled) {
-            return res.status(404).json({ success: false, message: 'Map is not enabled for this project' });
-        }
-
         const locations = await Location.find({ project: project._id }).sort({ name: 1 });
+        const schools = await School.find().lean();
+        const schoolMap = new Map();
+        schools.forEach((s) => {
+            const clean = s.name.replace(/\s*(Basic\s+School|Secondary\s+School|School)\s*$/i, '').trim().toLowerCase();
+            schoolMap.set(clean, s);
+            schoolMap.set(s.name.trim().toLowerCase(), s);
+        });
+
+        const enrichedLocations = locations.map((loc) => {
+            const locObj = loc.toObject ? loc.toObject() : { ...loc };
+            const cleanLoc = locObj.name.replace(/\s*(Basic\s+School|Secondary\s+School|School)\s*$/i, '').trim().toLowerCase();
+            const matched = schoolMap.get(cleanLoc) || schoolMap.get(locObj.name.trim().toLowerCase());
+
+            if (matched) {
+                if ((!locObj.photos || locObj.photos.length === 0) && matched.photos?.length > 0) {
+                    locObj.photos = matched.photos;
+                }
+                if (!locObj.summary && matched.summary) {
+                    locObj.summary = matched.summary;
+                }
+                locObj.studentCount = locObj.studentCount ?? matched.studentCount;
+                locObj.principalName = locObj.principalName || matched.principalName;
+                locObj.contact = locObj.contact || matched.contact;
+
+                locObj.details = Array.isArray(locObj.details) ? [...locObj.details] : [];
+                const existingLabels = new Set(locObj.details.map((d) => (d.label || '').toLowerCase().trim()));
+
+                if (matched.studentCount != null && !existingLabels.has('students') && !existingLabels.has('student count')) {
+                    locObj.details.unshift({ label: 'Students', value: `${matched.studentCount}` });
+                }
+                if (matched.principalName && !existingLabels.has('principal') && !existingLabels.has('headmaster')) {
+                    locObj.details.push({ label: 'Principal', value: matched.principalName });
+                }
+                if (matched.contact && !existingLabels.has('contact') && !existingLabels.has('phone')) {
+                    locObj.details.push({ label: 'Contact', value: matched.contact });
+                }
+            }
+
+            return locObj;
+        });
 
         res.status(200).json({
             success: true,
             project: {
                 id: project._id,
+                _id: project._id,
                 name: project.title,
                 title: project.title,
                 slug: project.slug,
@@ -101,11 +151,15 @@ exports.getProjectMap = async (req, res) => {
                 startDate: project.startDate,
                 projectType: project.projectType,
                 status: project.status,
-                mapSettings: project.mapSettings,
-                regionName: project.mapSettings?.regionName || '',
+                mapSettings: {
+                    mapEnabled: true,
+                    regionName: project.mapSettings?.regionName || 'Nuwakot',
+                    ...(project.mapSettings || {}),
+                },
+                regionName: project.mapSettings?.regionName || 'Nuwakot',
                 regionGeoJSON: project.mapSettings?.regionGeoJSON || null,
             },
-            locations,
+            locations: enrichedLocations,
         });
     } catch (err) {
         res.status(400).json({ success: false, message: err.message });
@@ -120,6 +174,7 @@ exports.createProject = async (req, res) => {
         const {
             title,
             description,
+            content,
             summary,
             projectType,
             status,
@@ -155,6 +210,7 @@ exports.createProject = async (req, res) => {
         const project = await Project.create({
             title: title.trim(),
             description,
+            content: content || '',
             summary: summary ? summary.trim() : '',
             projectType: projectType || '',
             status: status || 'Active',
@@ -206,6 +262,7 @@ exports.updateProject = async (req, res) => {
 
         if (title !== undefined) project.title = title.trim();
         if (description !== undefined) project.description = description;
+        if (req.body.content !== undefined) project.content = req.body.content;
         if (summary !== undefined) project.summary = summary.trim();
         if (projectType !== undefined) project.projectType = projectType;
         if (status !== undefined) project.status = status;

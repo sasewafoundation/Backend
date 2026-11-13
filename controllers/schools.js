@@ -1,4 +1,5 @@
 const School = require('../models/School');
+const Location = require('../models/Location');
 const { uploadImageBuffer, destroyImage } = require('../config/cloudinary');
 
 // Helper to safely parse JSON or array/object fields from multipart/form-data or JSON bodies
@@ -290,6 +291,50 @@ exports.updateSchool = async (req, res) => {
         school.photoPublicIds = currentPublicIds;
 
         await school.save();
+
+        // Two-way sync: Keep Location documents in project maps in sync with school updates
+        try {
+            const cleanName = school.name.replace(/\s*(Basic\s+School|Secondary\s+School|School)\s*$/i, '').trim();
+            const regex = new RegExp(`^${cleanName}`, 'i');
+
+            // Build dynamic details array from school fields
+            const details = [
+                school.studentCount != null ? { label: 'Students', value: `${school.studentCount}` } : null,
+                school.principalName ? { label: 'Principal', value: school.principalName } : null,
+                school.contact ? { label: 'Contact', value: school.contact } : null,
+            ].filter(Boolean);
+
+            const updateFields = {
+                lat: school.lat,
+                lng: school.lng,
+                area: school.area,
+                summary: school.summary,
+            };
+
+            if (details.length > 0) {
+                updateFields.details = details;
+            }
+            if (school.photos && school.photos.length > 0) {
+                updateFields.photos = school.photos;
+            }
+            if (school.photoPublicIds && school.photoPublicIds.length > 0) {
+                updateFields.photoPublicIds = school.photoPublicIds;
+            }
+
+            await Location.updateMany(
+                {
+                    $or: [
+                        { name: school.name },
+                        { name: { $regex: regex } },
+                    ],
+                },
+                {
+                    $set: updateFields,
+                }
+            );
+        } catch (syncErr) {
+            console.warn('Failed to sync school update to Location collection:', syncErr.message);
+        }
 
         res.status(200).json({ success: true, data: school });
     } catch (err) {

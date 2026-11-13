@@ -3,9 +3,11 @@ const mongoose = require('mongoose');
 const projectSchema = new mongoose.Schema({
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
+    content: { type: String, default: '' },
     summary: { type: String, default: '', trim: true },
     projectType: { type: String, default: '' },
     slug: { type: String, unique: true, sparse: true, trim: true },
+    legacySlugs: [{ type: String }],
     startDate: { type: Date, default: null },
     images: [{ type: String }],
     imagePublicIds: [{ type: String }],

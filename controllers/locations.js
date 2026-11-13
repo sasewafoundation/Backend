@@ -1,5 +1,6 @@
 const Location = require('../models/Location');
 const Project = require('../models/Project');
+const School = require('../models/School');
 const { uploadImageBuffer, destroyImage } = require('../config/cloudinary');
 
 // Helper to safely parse JSON or array/object fields
@@ -277,6 +278,62 @@ exports.updateLocation = async (req, res) => {
         location.photoPublicIds = currentPublicIds;
 
         await location.save();
+
+        // Two-way sync: Keep School documents in sync with project location updates
+        try {
+            const cleanName = location.name.replace(/\s*(Basic\s+School|Secondary\s+School|School)\s*$/i, '').trim();
+            const regex = new RegExp(`^${cleanName}`, 'i');
+
+            // Extract studentCount, principalName, contact from details array
+            let studentCount = null;
+            let principalName = '';
+            let contact = '';
+
+            if (Array.isArray(location.details)) {
+                for (const d of location.details) {
+                    const l = (d.label || '').trim().toLowerCase();
+                    if (l.includes('student') || l.includes('enrolled')) {
+                        const parsed = parseInt(d.value, 10);
+                        if (!isNaN(parsed)) studentCount = parsed;
+                    } else if (l.includes('principal') || l.includes('headmaster')) {
+                        principalName = d.value.trim();
+                    } else if (l.includes('contact') || l.includes('phone')) {
+                        contact = d.value.trim();
+                    }
+                }
+            }
+
+            const schoolUpdateFields = {
+                lat: location.lat,
+                lng: location.lng,
+                area: location.area,
+                summary: location.summary,
+            };
+
+            if (studentCount !== null) schoolUpdateFields.studentCount = studentCount;
+            if (principalName) schoolUpdateFields.principalName = principalName;
+            if (contact) schoolUpdateFields.contact = contact;
+            if (location.photos && location.photos.length > 0) {
+                schoolUpdateFields.photos = location.photos;
+            }
+            if (location.photoPublicIds && location.photoPublicIds.length > 0) {
+                schoolUpdateFields.photoPublicIds = location.photoPublicIds;
+            }
+
+            await School.updateMany(
+                {
+                    $or: [
+                        { name: location.name },
+                        { name: { $regex: regex } },
+                    ],
+                },
+                {
+                    $set: schoolUpdateFields,
+                }
+            );
+        } catch (syncErr) {
+            console.warn('Failed to sync location update to School collection:', syncErr.message);
+        }
 
         res.status(200).json({ success: true, data: location });
     } catch (err) {
